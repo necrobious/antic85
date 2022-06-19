@@ -127,7 +127,7 @@ pub enum FromBase85Error {
     InvalidByte(char, usize),
     InvalidInputLength(usize),
     InvalidOutputLength(usize),
-    UnexpectedOutputLength(usize,usize),
+    InvalidDecodeLength(usize,usize),
 }
 
 impl fmt::Debug for FromBase85Error {
@@ -136,8 +136,8 @@ impl fmt::Debug for FromBase85Error {
             FromBase85Error::InvalidByte(ch, idx) => write!(f, "Invalid decode base85 character '{}' at position {}.", ch, idx),
             FromBase85Error::InvalidInputLength(len) => write!(f, "Invalid decode input length {}.", len),
             FromBase85Error::InvalidOutputLength(len) => write!(f, "Invalid decode output length {}.", len),
-            FromBase85Error::UnexpectedOutputLength(expected, actual) =>
-                write!(f, "Invalid decode output length: expected {}, received {}.", expected, actual),
+            FromBase85Error::InvalidDecodeLength(expected, actual) =>
+                write!(f, "Invalid decode length: expected {}, received {}.", expected, actual),
         }
     }
 }
@@ -155,7 +155,7 @@ impl error::Error for FromBase85Error {
             FromBase85Error::InvalidByte(_, _) => "invalid character",
             FromBase85Error::InvalidInputLength(_) => "invalid decode input length",
             FromBase85Error::InvalidOutputLength(_) => "invalid decode output length",
-            FromBase85Error::UnexpectedOutputLength(_,_) => "unexpected decode output length",
+            FromBase85Error::InvalidDecodeLength(_,_) => "unexpected decode output length",
         }
     }
 }
@@ -164,7 +164,7 @@ impl error::Error for FromBase85Error {
 pub enum ToBase85Error {
     InvalidInputLength(usize),
     InvalidOutputLength(usize),
-    UnexpectedOutputLength(usize,usize),
+    InvalidEncodeLength(usize,usize),
 }
 
 impl fmt::Display for ToBase85Error {
@@ -186,13 +186,14 @@ impl fmt::Debug for ToBase85Error {
                 write!(f, "Invalid encode input size {}.", len),
             ToBase85Error::InvalidOutputLength(len) =>
                 write!(f, "Invalid encode output size {}.", len),
-            ToBase85Error::UnexpectedOutputLength(expected, actual) =>
-                write!(f, "Invalid encode output length: expected {}, received {}.", expected, actual),
+            ToBase85Error::InvalidEncodeLength(expected, actual) =>
+                write!(f, "Invalid encode length: expected {}, received {}.", expected, actual),
         }
     }
 }
 
 pub fn decode (input: &str) -> Result<Vec<u8>, FromBase85Error> {
+//pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, FromBase85Error> {
     use FromBase85Error::*;
     let chars = input.chars().collect::<Vec<char>>();
     let in_len = chars.len();
@@ -208,7 +209,7 @@ pub fn decode (input: &str) -> Result<Vec<u8>, FromBase85Error> {
         let exp_len = out_nxt_pos - out_pos;
         let bytes_written = from_base85_chunk(&chars[in_pos..in_nxt_pos], &mut buffer[0..exp_len])
             .map_err(|err| match err { InvalidByte(c, p) => InvalidByte(c, p+in_pos), e => e })?;
-        if bytes_written != exp_len { return Err(UnexpectedOutputLength(exp_len, bytes_written)) }
+        if bytes_written != exp_len { return Err(InvalidDecodeLength(exp_len, bytes_written)) }
         output.extend_from_slice(&buffer[0..exp_len]);
         if exp_len < 4 || in_nxt_pos == in_len { break }
         in_pos = in_nxt_pos;
@@ -217,9 +218,10 @@ pub fn decode (input: &str) -> Result<Vec<u8>, FromBase85Error> {
     Ok(output)
 }
 
-pub fn encode (input: &[u8]) -> Result<String, ToBase85Error>  {
+pub fn encode<T: AsRef<[u8]>>(input: T) -> Result<String, ToBase85Error>  {
     use ToBase85Error::*;
-    let in_len = input.len();
+    let bytes = input.as_ref();
+    let in_len = bytes.len();
     let out_len = calculate_encoding_output_length(in_len);
     let mut output: Vec<char> = Vec::with_capacity(out_len);
     let mut in_pos: usize = 0;
@@ -229,8 +231,8 @@ pub fn encode (input: &[u8]) -> Result<String, ToBase85Error>  {
         let in_nxt_pos = if in_pos + 4 < in_len { in_pos + 4 } else { in_len };
         let out_nxt_pos = if out_pos + 5 < out_len { out_pos + 5 } else { out_len };
         let exp_len = out_nxt_pos - out_pos;
-        let bytes_written = to_base85_chunk(&input[in_pos..in_nxt_pos], &mut buffer[0..exp_len])?;    
-        if bytes_written != exp_len { return Err(UnexpectedOutputLength(exp_len, bytes_written)) }
+        let bytes_written = to_base85_chunk(&bytes[in_pos..in_nxt_pos], &mut buffer[0..exp_len])?;    
+        if bytes_written != exp_len { return Err(InvalidEncodeLength(exp_len, bytes_written)) }
         output.extend_from_slice(&buffer[0..exp_len]);
         if exp_len < 5 || in_nxt_pos == in_len { break }
         in_pos = in_nxt_pos;
@@ -328,102 +330,6 @@ pub fn calculate_decoding_output_length(char_input_len: usize) -> usize {
 }
 
 
-//--- Manage b85 chunks, 4 bytes == 5 chars
-/*
-pub fn to_b85_chunk (input: &[u8; 4]) -> [char; 5] {
-    let mut accum: u32 = 0;
-    for byte in input {
-        accum = accum * 256 + (*byte as u32);
-    }
-    let temp = accum.clone();
-    let mut output: [char; 5] = Default::default();
-    for c in &mut output[..] {
-        *c = ALPHABET[(accum % 85) as usize] as char;
-        accum = accum / 85;
-    }
-    output.reverse();
-    println!("encode of {:02x?} into {:?}; accum from 0 to {} and back to {}", input, output, temp, accum);
-    output
-}
-
-pub fn from_b85_chunk (input: &[char; 5]) -> Result<[u8; 4], FromBase85Error> {
-    let mut accum: u32 = 0;
-    for c in input {
-        if (*c as usize) < 33 || (*c as usize) > 126 { return Err(FromBase85Error::InvalidByte(*c, 0)) }
-        let index = ALPHABET_INDEX[(*c as usize) - 33];
-        if index == -1 { return Err(FromBase85Error::InvalidByte(*c, 0)) }
-        accum = accum * 85 + index as u32;
-    }
-    let temp = accum.clone();
-    let mut output = [0_u8; 4];
-    for b in &mut output[..] {
-        *b = (accum % 256) as u8;
-        accum = accum / 256;
-    }
-    output.reverse();
-    println!("decode of {:?} into {:02x?}; accum from 0 to {} and back to {}", input, output, temp, accum);
-    Ok(output)
-}
-//---
-
-//---  Manage veriable length inputs
-pub fn to_b85 (input: &[u8]) -> String {
-    let len = input.len();
-
-    let mut padding = 0;
-    let mut to_b85_output: Vec<char> = Vec::with_capacity(1 + len / 4 * 5);
-    to_b85_output.push('0'); // padding value placeholder, prepended to the head of the encoded string, 
-                             // replaced with the actual value at the end of encoding 
-    for c in input.chunks(4) {
-        let (cs, pad) = match c.len() {
-            1 => (to_b85_chunk(&[c[0], 0x00, 0x00, 0x00]), 3),
-            2 => (to_b85_chunk(&[c[0], c[1], 0x00, 0x00]), 2),
-            3 => (to_b85_chunk(&[c[0], c[1], c[2], 0x00]), 1),
-            _ => (to_b85_chunk(&[c[0], c[1], c[2], c[3]]), 0),
-        };
-        to_b85_output.extend_from_slice(&cs);
-        padding = pad;
-    }
-
-    if to_b85_output.len() > 0 && padding > 0 {
-        to_b85_output[0] = char::from(48 + padding); // update with the actuall padding count
-    }
-
-    to_b85_output.into_iter().collect::<String>()
-}
-
-pub fn from_b85 (input: &str) -> Result<Vec<u8>, FromBase85Error> {
-    let len = input.len();
-
-    if len == 0 || len % 5 != 1 { return Err(FromBase85Error::InvalidInputLength(len)) }
-
-    let mut ch_iter = input.chars().into_iter();
-
-    let pad = ch_iter
-        .next()
-        .ok_or(FromBase85Error::InvalidInputLength(0))
-        .and_then(|c| c.to_digit(10).ok_or(FromBase85Error::InvalidByte(c, 0)))
-        .and_then(|d| if d <= 3 { Ok(d) } else { Err(FromBase85Error::InvalidByte(std::char::from_u32(d).unwrap(), 0))})
-        .and_then(|d| usize::try_from(d).map_err(|_| FromBase85Error::InvalidByte(std::char::from_u32(d).unwrap(), 0)))?;
-
-    let mut output: Vec<u8> = Vec::with_capacity( (len / 5) * 4);
-    let mut pos: usize = 0; 
-    for ch in ch_iter.collect::<Vec<char>>().chunks(5) {
-        let last = pos + 5 < len;
-        let b = from_b85_chunk(&[ch[0], ch[1], ch[2], ch[3], ch[4]])
-            .map_err(|err| match err {
-                FromBase85Error::InvalidByte(c, p) => FromBase85Error::InvalidByte(c, p+pos),
-                e => e,
-            })?;
-        output.extend_from_slice(if last { &b[0..(4 - pad)] } else { &b }); 
-        pos = pos + 5;
-    }
-    Ok(output)
-}
-//---
-*/
-
-
 #[cfg(test)]
 mod tests {
     use super::{ decode, encode, calculate_decoding_output_length, calculate_encoding_output_length, to_base85_chunk, from_base85_chunk };
@@ -431,21 +337,17 @@ mod tests {
 
     #[test]
     fn variable_round_trip () {
-        for i in 0..1000 {
+        for _ in 0..1000 {
             let rnd_size = rand::random::<usize>();
-            println!("attempt {:003?}: rnd_size: {};",i, rnd_size);
-            let rnd_capacity: usize = rnd_size % 100 + 1;
-            println!("attempt {:003?}: rnd_capacity: {};",i, rnd_capacity);
+            let rnd_capacity: usize = rnd_size % 1000 + 1;
             let mut rnd_bytes:Vec<u8> = Vec::with_capacity(rnd_capacity);
             for _ in 0..rnd_bytes.capacity() { rnd_bytes.push(rand::random::<u8>()); }
-            println!("attempt {:003?}: rnd_bytes: {:02x?};",i, rnd_bytes);
             let enc_output = encode(&rnd_bytes);
-            assert!(enc_output.is_ok());
-            println!("attempt {:003?}: encoded output: {:02x?};",i, &enc_output);
-            let dec_output = decode(&enc_output.unwrap());
-            assert!(dec_output.is_ok());
-            println!("attempt {:003?}: decoded output: {:02x?};",i, &dec_output);
-            assert_eq!(rnd_bytes, dec_output.unwrap());
+            assert!(enc_output.is_ok(), "testing encode() using input bytes of {:02x?}", &rnd_bytes);
+            let encoded = enc_output.unwrap();
+            let dec_output = decode(&encoded);
+            assert!(dec_output.is_ok(), "testing decode() using input of {} from bytes {:02x?} ", encoded, &rnd_bytes);
+            assert_eq!(rnd_bytes, dec_output.unwrap(), "testing that decoded bytes match the original encoded bytes");
         }
     }
 
@@ -478,121 +380,4 @@ mod tests {
         assert_eq!(calculate_decoding_output_length(10), 8); // usecase #2
         assert_eq!(calculate_decoding_output_length(11), 0); // usecase #3
     }
-//    #[test]
-//    fn decode_no_padding1() {
-//        let t1 = "0Hello";
-//        let r1 = from_b85(t1);
-//        assert_eq!(r1, Ok(vec!(0x36, 0x60, 0xE3, 0x0D)));
-//        let t2 = "0World";
-//        let r2 = from_b85(t2);
-//        assert_eq!(r2, Ok(vec!(0x65, 0x6b, 0x07, 0xf9)));
-//    }
-
-
-//    #[test]
-//    fn decode_no_padding() {
-//        let t1 = "0hELLO";
-//        let r1 = from_b85(t1);
-//        assert_eq!(r1, Ok(vec!(0x86, 0x4F, 0xD2, 0x6F)));
-//        let t2 = "0wORLD";
-//        let r2 = from_b85(t2);
-//        assert_eq!(r2, Ok(vec!(0xB5, 0x59, 0xF7, 0x5B)));
-//    }
-
-//    #[test]
-//    fn decode_chunk() {
-//        let t1 = &['h','E','L','L','O'];
-//        let r1 = from_b85_chunk(t1);
-//        assert_eq!(r1, Ok([0x86, 0x4F, 0xD2, 0x6F]));
-//        let t2 = &['w','O','R','L','D'];
-//        let r2 = from_b85_chunk(t2);
-//        assert_eq!(r2, Ok([0xB5, 0x59, 0xF7, 0x5B]));
-//    }
-
-//    #[test]
-//    fn encode_no_padding() {
-//        let t1 = &[0x86, 0x4F, 0xD2, 0x6F];
-//        let r1 = to_b85(t1);
-//        assert_eq!(r1, "0hELLO".to_string());
-//        let t2 = &[0xB5, 0x59, 0xF7, 0x5B];
-//        let r2 = to_b85(t2);
-//        assert_eq!(r2, "0wORLD".to_string());
-//    }
-
-//    #[test]
-//    fn encode_chunk() {
-//        let t1 = &[0x86, 0x4F, 0xD2, 0x6F];
-//        let r1 = to_b85_chunk(t1);
-//        assert_eq!(&r1.iter().collect::<String>(), "hELLO");
-//        let t2 = &[0xB5, 0x59, 0xF7, 0x5B];
-//        let r2 = to_b85_chunk(t2);
-//        assert_eq!(&r2.iter().collect::<String>(), "wORLD");
-//    }
-
-//    #[test]
-//    fn encode_chunk_pads() {
-//        let t1 = &[0x86, 0x00, 0x00, 0x00];
-//        let r1 = to_b85_chunk(t1);
-//        let t2 = &[0x86];
-//        let mut o2: [char; 5] = Default::default();
-//        let r2 = to_base85_chunk(t2, &mut o2);    
-//        assert_eq!(r2, Ok(2));
-//        let r2s = r2.unwrap();
-//        let r2a = &o2[0..r2s];
-//        assert_eq!(r2a.iter().collect::<String>(), "wORLD");    
-//        assert_eq!(&r1.iter().collect::<String>(), "hELLO");
-//    }
-
-//    #[test]
-//    fn ensure_output_char_count_is_one_plus_input_byte_count() {
-//        let mut o: [char; 5] = Default::default();
-//        let mut i = [0_u8; 4];
-//        for idx0 in 0..256 {
-//            // input of 1 byte should always result in an output of two chars
-//            i[0] = idx0 as u8;
-//            let r0 = to_base85_chunk(&i[0..1], &mut o);    
-//            assert_eq!(r0, Ok(2), "testing byte at 0:  input: {:?}; ourput: {:?}", &i, &o);
-//            for idx1 in 0..256 {
-//                // input of 2 bytes should always result in an output of three chars
-//                i[1] = idx1 as u8;
-//                let r1 = to_base85_chunk(&i[0..2], &mut o);    
-//                assert_eq!(r1, Ok(3), "testing byte at 1:  input: {:?}; ourput: {:?}", &i, &o);
-//                for idx2 in 0..256 {
-//                    // input of 2 bytes should always result in an output of three chars
-//                    i[2] = idx2 as u8;
-//                    let r2 = to_base85_chunk(&i[0..3], &mut o);    
-//                    assert_eq!(r2, Ok(4), "testing byte at 2:  input: {:?}; ourput: {:?}", &i, &o);
-//                }
-//            }
-//        }
-//    }
-
-
-//    #[test]
-//    fn random_100_round_trips () {
-//        for _ in 0..100 {
-//            let mut rnd_bytes = [0_u8; 100];
-//            for rnd_byte in &mut rnd_bytes[..]  {
-//                *rnd_byte = rand::random::<u8>();
-//            }
-//    
-//            let mut to_b85_output: Vec<char> = Vec::with_capacity(rnd_bytes.len() / 4 * 5);
-//            for c in rnd_bytes.chunks(4) {
-//                let cs = to_b85_chunk(&[c[0], c[1], c[2],c[3]]);
-//                to_b85_output.extend_from_slice(&cs);
-//            }
-//            let b85_str = to_b85_output.into_iter().collect::<String>();
-//
-//            assert_eq!(125, b85_str.len());    
-//    
-//            let mut from_b85_output: Vec<u8> = Vec::with_capacity(rnd_bytes.len());
-//            for c in b85_str.chars().collect::<Vec<char>>().chunks(5) {
-//                let bs = from_b85_chunk(&[c[0], c[1], c[2],c[3],c[4]]);
-//                assert_eq!(true, bs.is_ok());
-//                from_b85_output.extend_from_slice(&bs.unwrap());
-//            }
-//    
-//            assert_eq!(rnd_bytes.to_vec(), from_b85_output, "testing random bytes:{:02x?} into base85: {}", &rnd_bytes, &b85_str);
-//        }
-//    }
 }
