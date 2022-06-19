@@ -1,3 +1,4 @@
+
 // the RFC1924 alphabet, originally an april 1 RFC joke, but favorable when working with JSON,
 // as encoded data can be added to a JSON collection without the need to have the encoded data
 // further encoded, as is required of other base85 varients.
@@ -124,7 +125,7 @@ const ALPHABET_INDEX: &'static [i8] = &[
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum FromBase85Error {
-    InvalidByte(char, usize),
+    InvalidByte(u8, usize),
     InvalidInputLength(usize),
     InvalidOutputLength(usize),
     InvalidDecodeLength(usize,usize),
@@ -192,10 +193,9 @@ impl fmt::Debug for ToBase85Error {
     }
 }
 
-pub fn decode (input: &str) -> Result<Vec<u8>, FromBase85Error> {
-//pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, FromBase85Error> {
+pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, FromBase85Error> {
     use FromBase85Error::*;
-    let chars = input.chars().collect::<Vec<char>>();
+    let chars = input.as_ref();
     let in_len = chars.len();
     let out_len = calculate_decoding_output_length(in_len);
     if out_len == 0 { return Err(InvalidInputLength(in_len)) }; 
@@ -247,7 +247,7 @@ pub fn encode<T: AsRef<[u8]>>(input: T) -> Result<String, ToBase85Error>  {
 // 3 char  -> 2 byte 
 // 4 char  -> 3 byte 
 // 5 char  -> 4 byte 
-pub fn from_base85_chunk (input: &[char], output: &mut [u8]) -> Result<usize, FromBase85Error> {
+pub fn from_base85_chunk (input: &[u8], output: &mut [u8]) -> Result<usize, FromBase85Error> {
     use FromBase85Error::*;
     // ensoure we have enough input data and output space to succeed
     let in_len = input.len();
