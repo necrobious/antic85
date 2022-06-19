@@ -124,77 +124,74 @@ const ALPHABET_INDEX: &'static [i8] = &[
 ];
 
 #[derive(Clone, Copy, PartialEq)]
-pub enum FromBase85Error {
+pub enum DecodeError {
     InvalidByte(u8, usize),
     InvalidInputLength(usize),
     InvalidOutputLength(usize),
     InvalidDecodeLength(usize,usize),
 }
 
-impl fmt::Debug for FromBase85Error {
+impl fmt::Debug for DecodeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            FromBase85Error::InvalidByte(ch, idx) => write!(f, "Invalid decode base85 character '{}' at position {}.", ch, idx),
-            FromBase85Error::InvalidInputLength(len) => write!(f, "Invalid decode input length {}.", len),
-            FromBase85Error::InvalidOutputLength(len) => write!(f, "Invalid decode output length {}.", len),
-            FromBase85Error::InvalidDecodeLength(expected, actual) =>
+            Self::InvalidByte(ch, idx) => write!(f, "Invalid decode base85 character '{}' at position {}.", ch, idx),
+            Self::InvalidInputLength(len) => write!(f, "Invalid decode input length {}.", len),
+            Self::InvalidOutputLength(len) => write!(f, "Invalid decode output length {}.", len),
+            Self::InvalidDecodeLength(expected, actual) =>
                 write!(f, "Invalid decode length: expected {}, received {}.", expected, actual),
         }
     }
 }
 
-impl fmt::Display for FromBase85Error {
+impl fmt::Display for DecodeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&self, f)
     }
 }
 
 
-impl error::Error for FromBase85Error {
+impl error::Error for DecodeError {
     fn description(&self) -> &str {
         match *self {
-            FromBase85Error::InvalidByte(_, _) => "invalid character",
-            FromBase85Error::InvalidInputLength(_) => "invalid decode input length",
-            FromBase85Error::InvalidOutputLength(_) => "invalid decode output length",
-            FromBase85Error::InvalidDecodeLength(_,_) => "unexpected decode output length",
+            Self::InvalidByte(_, _) => "invalid character",
+            Self::InvalidInputLength(_) => "invalid decode input length",
+            Self::InvalidOutputLength(_) => "invalid decode output length",
+            Self::InvalidDecodeLength(_,_) => "unexpected decode output length",
         }
     }
 }
 
 #[derive(Clone, Copy, PartialEq)]
-pub enum ToBase85Error {
+pub enum EncodeError {
     InvalidInputLength(usize),
     InvalidOutputLength(usize),
     InvalidEncodeLength(usize,usize),
 }
 
-impl fmt::Display for ToBase85Error {
+impl fmt::Display for EncodeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&self, f)
     }
 }
 
-impl error::Error for ToBase85Error {
+impl error::Error for EncodeError {
     fn description(&self) -> &str {
         "invalid input size"
     }
 }
 
-impl fmt::Debug for ToBase85Error {
+impl fmt::Debug for EncodeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            ToBase85Error::InvalidInputLength(len) =>
-                write!(f, "Invalid encode input size {}.", len),
-            ToBase85Error::InvalidOutputLength(len) =>
-                write!(f, "Invalid encode output size {}.", len),
-            ToBase85Error::InvalidEncodeLength(expected, actual) =>
-                write!(f, "Invalid encode length: expected {}, received {}.", expected, actual),
+            Self::InvalidInputLength(len) => write!(f, "Invalid encode input size {}.", len),
+            Self::InvalidOutputLength(len) => write!(f, "Invalid encode output size {}.", len),
+            Self::InvalidEncodeLength(expected, actual) => write!(f, "Invalid encode length: expected {}, received {}.", expected, actual),
         }
     }
 }
 
-pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, FromBase85Error> {
-    use FromBase85Error::*;
+pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, DecodeError> {
+    use DecodeError::*;
     let chars = input.as_ref();
     let in_len = chars.len();
     let out_len = calculate_decoding_output_length(in_len);
@@ -218,8 +215,8 @@ pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, FromBase85Error> {
     Ok(output)
 }
 
-pub fn encode<T: AsRef<[u8]>>(input: T) -> Result<String, ToBase85Error>  {
-    use ToBase85Error::*;
+pub fn encode<T: AsRef<[u8]>>(input: T) -> Result<String, EncodeError>  {
+    use EncodeError::*;
     let bytes = input.as_ref();
     let in_len = bytes.len();
     let out_len = calculate_encoding_output_length(in_len);
@@ -247,8 +244,8 @@ pub fn encode<T: AsRef<[u8]>>(input: T) -> Result<String, ToBase85Error>  {
 // 3 char  -> 2 byte 
 // 4 char  -> 3 byte 
 // 5 char  -> 4 byte 
-pub fn from_base85_chunk (input: &[u8], output: &mut [u8]) -> Result<usize, FromBase85Error> {
-    use FromBase85Error::*;
+pub fn from_base85_chunk (input: &[u8], output: &mut [u8]) -> Result<usize, DecodeError> {
+    use DecodeError::*;
     // ensoure we have enough input data and output space to succeed
     let in_len = input.len();
     // we expect an an input between 2 and 5 characters
@@ -279,8 +276,8 @@ pub fn from_base85_chunk (input: &[u8], output: &mut [u8]) -> Result<usize, From
 // 2 byte -> 3 char
 // 3 byte -> 4 char
 // 4 byte -> 5 char
-pub fn to_base85_chunk (input: &[u8], output: &mut [char]) -> Result<usize,ToBase85Error> {
-    use ToBase85Error::*;
+pub fn to_base85_chunk (input: &[u8], output: &mut [char]) -> Result<usize,EncodeError> {
+    use EncodeError::*;
     // ensoure we have enough input data and output space to succeed
     let in_len = input.len();
     if in_len > 4 || in_len < 1 { return Err(InvalidInputLength(in_len)) }
