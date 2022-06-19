@@ -179,7 +179,6 @@ impl error::Error for ToBase85Error {
     }
 }
 
-
 impl fmt::Debug for ToBase85Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
@@ -193,11 +192,12 @@ impl fmt::Debug for ToBase85Error {
     }
 }
 
-fn decode (input: &str) -> Result<Vec<u8>, FromBase85Error> {
+pub fn decode (input: &str) -> Result<Vec<u8>, FromBase85Error> {
+    use FromBase85Error::*;
     let chars = input.chars().collect::<Vec<char>>();
     let in_len = chars.len();
     let out_len = calculate_decoding_output_length(in_len);
-    if out_len == 0 { return Err(FromBase85Error::InvalidInputLength(in_len)) }; 
+    if out_len == 0 { return Err(InvalidInputLength(in_len)) }; 
     let mut output: Vec<u8> = Vec::with_capacity(out_len);
     let mut in_pos: usize = 0;
     let mut out_pos: usize = 0;
@@ -207,11 +207,8 @@ fn decode (input: &str) -> Result<Vec<u8>, FromBase85Error> {
         let out_nxt_pos = if out_pos + 4 < out_len { out_pos + 4 } else { out_len };
         let exp_len = out_nxt_pos - out_pos;
         let bytes_written = from_base85_chunk(&chars[in_pos..in_nxt_pos], &mut buffer[0..exp_len])
-            .map_err(|err| match err {
-                FromBase85Error::InvalidByte(c, p) => FromBase85Error::InvalidByte(c, p+in_pos),
-                e => e,
-            })?;
-        if bytes_written != exp_len { return Err(FromBase85Error::UnexpectedOutputLength(exp_len, bytes_written)) }
+            .map_err(|err| match err { InvalidByte(c, p) => InvalidByte(c, p+in_pos), e => e })?;
+        if bytes_written != exp_len { return Err(UnexpectedOutputLength(exp_len, bytes_written)) }
         output.extend_from_slice(&buffer[0..exp_len]);
         if exp_len < 4 || in_nxt_pos == in_len { break }
         in_pos = in_nxt_pos;
@@ -220,7 +217,8 @@ fn decode (input: &str) -> Result<Vec<u8>, FromBase85Error> {
     Ok(output)
 }
 
-fn encode (input: &[u8]) -> Result<String, ToBase85Error>  {
+pub fn encode (input: &[u8]) -> Result<String, ToBase85Error>  {
+    use ToBase85Error::*;
     let in_len = input.len();
     let out_len = calculate_encoding_output_length(in_len);
     let mut output: Vec<char> = Vec::with_capacity(out_len);
@@ -232,7 +230,7 @@ fn encode (input: &[u8]) -> Result<String, ToBase85Error>  {
         let out_nxt_pos = if out_pos + 5 < out_len { out_pos + 5 } else { out_len };
         let exp_len = out_nxt_pos - out_pos;
         let bytes_written = to_base85_chunk(&input[in_pos..in_nxt_pos], &mut buffer[0..exp_len])?;    
-        if bytes_written != exp_len { return Err(ToBase85Error::UnexpectedOutputLength(exp_len, bytes_written)) }
+        if bytes_written != exp_len { return Err(UnexpectedOutputLength(exp_len, bytes_written)) }
         output.extend_from_slice(&buffer[0..exp_len]);
         if exp_len < 5 || in_nxt_pos == in_len { break }
         in_pos = in_nxt_pos;
@@ -248,30 +246,28 @@ fn encode (input: &[u8]) -> Result<String, ToBase85Error>  {
 // 4 char  -> 3 byte 
 // 5 char  -> 4 byte 
 pub fn from_base85_chunk (input: &[char], output: &mut [u8]) -> Result<usize, FromBase85Error> {
+    use FromBase85Error::*;
     // ensoure we have enough input data and output space to succeed
     let in_len = input.len();
     // we expect an an input between 2 and 5 characters
-    if in_len > 5 || in_len < 2 { return Err(FromBase85Error::InvalidInputLength(in_len)) }
+    if in_len > 5 || in_len < 2 { return Err(InvalidInputLength(in_len)) }
     // we expect the output to accept between 1 and 4 bytes
     let out_len = in_len - 1;
-    if output.len() < out_len { return Err(FromBase85Error::InvalidOutputLength(out_len)) }
+    if output.len() < out_len { return Err(InvalidOutputLength(out_len)) }
 
     let mut accum: u32 = 0;
     for c in input {
-        if (*c as usize) < 33 || (*c as usize) > 126 { return Err(FromBase85Error::InvalidByte(*c, 0)) }
+        if (*c as usize) < 33 || (*c as usize) > 126 { return Err(InvalidByte(*c, 0)) }
         let index = ALPHABET_INDEX[(*c as usize) - 33];
-        if index == -1 { return Err(FromBase85Error::InvalidByte(*c, 0)) }
+        if index == -1 { return Err(InvalidByte(*c, 0)) }
         accum = accum * 85 + index as u32;
     }
-
-    let temp = accum.clone();
     let mut i = out_len;
     while i > 0 {
         i -= 1;
         output[i] = (accum % 256) as u8;
         accum = accum / 256;
     }
-//    println!("decode of {:?} into {:02x?}; accum from 0 to {} and back to {}", input, output, temp, accum);
     Ok(out_len)
 }
 
@@ -282,11 +278,12 @@ pub fn from_base85_chunk (input: &[char], output: &mut [u8]) -> Result<usize, Fr
 // 3 byte -> 4 char
 // 4 byte -> 5 char
 pub fn to_base85_chunk (input: &[u8], output: &mut [char]) -> Result<usize,ToBase85Error> {
+    use ToBase85Error::*;
     // ensoure we have enough input data and output space to succeed
     let in_len = input.len();
-    if in_len > 4 || in_len < 1 { return Err(ToBase85Error::InvalidInputLength(in_len)) }
+    if in_len > 4 || in_len < 1 { return Err(InvalidInputLength(in_len)) }
     let out_len = in_len + 1;
-    if output.len() < out_len { return Err(ToBase85Error::InvalidOutputLength(out_len)) }
+    if output.len() < out_len { return Err(InvalidOutputLength(out_len)) }
     
     // pile four byes into a u32 int
     let mut accum: u32 = 0;
@@ -295,16 +292,41 @@ pub fn to_base85_chunk (input: &[u8], output: &mut [char]) -> Result<usize,ToBas
     }
 
     // divide the u32 sum of the 4 input bytes into 5 charaters
-    let temp = accum.clone();
     let mut i = out_len;
     while i > 0 {
         i -= 1;
         output[i] = ALPHABET[(accum % 85) as usize] as char;
         accum = accum / 85;
     }
-//    println!("encode of {:02x?} into {:?}; accum from 0 to {} and back to {}", input, output, temp, accum);
     Ok(out_len)
 }
+
+//-- base85 utilities
+
+// computes the number of characters to expect, given the byte count of the input.
+// This has three usecases:
+//   1. when the input length is 0, the output should be 0
+//   2. when the input length modulo 4 is 0, the output should be the input length / 4 * 5
+//   3. when the input length modulo 4 is not 0, the output should same as usecase #2 + input % 4 + 1
+#[inline]
+pub fn calculate_encoding_output_length(bin_input_len: usize) -> usize {
+    let modulo = bin_input_len % 4;
+    (if bin_input_len < 4 { 0 } else { bin_input_len / 4 * 5 }) + match modulo { 1 => 2, 2 => 3, 3 => 4, _ => 0 }  
+}
+
+// Computes the number of bytes to expect, given the character count if the input.
+// This has four usecases:
+//   1. when the input length is 0 or 1, the output should be 0
+//   2. when the input length modulo 5 is 0, the output should be input length / 5 * 4
+//   3. when the input length modulo 5 is 1, the output should be 0 
+//   4. when the input length modulo 5 is 2-4, the output should be same as usecase #2 + input % 5 - 1 
+#[inline]
+pub fn calculate_decoding_output_length(char_input_len: usize) -> usize {
+    let modulo = char_input_len % 5;
+    if modulo == 1 { return 0 }
+    (if char_input_len < 5 { 0 } else { char_input_len / 5 * 4 }) + match modulo { 2 => 1, 3 => 2, 4 => 3, _ => 0 }
+}
+
 
 //--- Manage b85 chunks, 4 bytes == 5 chars
 /*
@@ -401,38 +423,33 @@ pub fn from_b85 (input: &str) -> Result<Vec<u8>, FromBase85Error> {
 //---
 */
 
-//-- base85 utilities
-
-// computes the number of characters to expect, given the byte count of the input.
-// This has three usecases:
-//   1. when the input length is 0, the output should be 0
-//   2. when the input length modulo 4 is 0, the output should be the input length / 4 * 5
-//   3. when the input length modulo 4 is not 0, the output should same as usecase #2 + input % 4 + 1
-#[inline]
-fn calculate_encoding_output_length(bin_input_len: usize) -> usize {
-    let mut char_output_len = if bin_input_len < 4 { 0 } else { bin_input_len / 4 * 5 };
-    char_output_len + match bin_input_len % 4 { 1 => 2, 2 => 3, 3 => 4, _ => 0 }
-}
-
-// Computes the number of bytes to expect, given the character count if the input.
-// This has four usecases:
-//   1. when the input length is 0 or 1, the output should be 0
-//   2. when the input length modulo 5 is 0, the output should be input length / 5 * 4
-//   3. when the input length modulo 5 is 1, the output should be 0 
-//   4. when the input length modulo 5 is 2-4, the output should be same as usecase #2 + input % 5 - 1 
-fn calculate_decoding_output_length(char_input_len: usize) -> usize {
-    let modulo = char_input_len % 5;
-    if modulo == 1 { return 0 }
-    let mut bin_output_len = if char_input_len < 5 { 0 } else { char_input_len / 5 * 4 };
-    bin_output_len + match modulo { 2 => 1, 3 => 2, 4 => 3, _ => 0 }
-}
-
 
 #[cfg(test)]
 mod tests {
-//    use super::{ encode, calculate_encoding_output_length, to_base85_chunk, to_b85, from_b85, to_b85_chunk, from_b85_chunk };
     use super::{ decode, encode, calculate_decoding_output_length, calculate_encoding_output_length, to_base85_chunk, from_base85_chunk };
     use rand; 
+
+    #[test]
+    fn variable_round_trip () {
+        for i in 0..1000 {
+            let rnd_size = rand::random::<usize>();
+            println!("attempt {:003?}: rnd_size: {};",i, rnd_size);
+            let rnd_capacity: usize = rnd_size % 100 + 1;
+            println!("attempt {:003?}: rnd_capacity: {};",i, rnd_capacity);
+            let mut rnd_bytes:Vec<u8> = Vec::with_capacity(rnd_capacity);
+            for _ in 0..rnd_bytes.capacity() { rnd_bytes.push(rand::random::<u8>()); }
+            println!("attempt {:003?}: rnd_bytes: {:02x?};",i, rnd_bytes);
+            let enc_output = encode(&rnd_bytes);
+            assert!(enc_output.is_ok());
+            println!("attempt {:003?}: encoded output: {:02x?};",i, &enc_output);
+            let dec_output = decode(&enc_output.unwrap());
+            assert!(dec_output.is_ok());
+            println!("attempt {:003?}: decoded output: {:02x?};",i, &dec_output);
+            assert_eq!(rnd_bytes, dec_output.unwrap());
+        }
+    }
+
+
     #[test]
     fn calculate_encoding_output_lengths () {
         assert_eq!(calculate_encoding_output_length(0), 0); // usecase #1
@@ -525,51 +542,6 @@ mod tests {
 //        assert_eq!(r2a.iter().collect::<String>(), "wORLD");    
 //        assert_eq!(&r1.iter().collect::<String>(), "hELLO");
 //    }
-
-    #[test]
-    fn variable_round_trip () {
-        let rnd_size = rand::random::<usize>();
-        println!("rnd_size: {};", rnd_size);
-        let rnd_capacity: usize = rnd_size % 100 + 1;
-        //let rnd_capacity: usize = 1;
-        println!("rnd_capacity: {};", rnd_capacity);
-        let mut rnd_bytes:Vec<u8> = Vec::with_capacity(rnd_capacity);
-        for _ in 0..rnd_bytes.capacity() { rnd_bytes.push(rand::random::<u8>()); }
-        println!("rnd_bytes: {:02x?};", rnd_bytes);
-        let enc_output = encode(&rnd_bytes);
-        assert!(enc_output.is_ok());
-        println!("encoded output: {:02x?};", &enc_output);
-        let dec_output = decode(&enc_output.unwrap());
-        assert!(dec_output.is_ok());
-        println!("decoded output: {:02x?};", &dec_output);
-        assert_eq!(rnd_bytes, dec_output.unwrap());
-
-//        let rnd_len = rnd_bytes.len();
-//
-//        //let enc_len = rnd_len / 4 * 5 + (match rnd_len % 4 { 1 => 2, 2 => 3, 3 => 4, _ => 0 });// put the whammy on it! 
-//        let enc_len = calculate_encoding_output_length(rnd_len);
-//        let mut enc_output: Vec<char> = Vec::with_capacity(enc_len);
-//
-//        println!("rnd_len: {}, enc_len: {}",rnd_len,enc_len);
-//
-//        let mut rnd_pos: usize = 0;
-//        let mut enc_pos: usize = 0;
-//        let mut buf: [char; 5] = Default::default();
-//        loop {
-//            let rnd_nxt_pos = if rnd_pos + 4 < rnd_len { rnd_pos + 4 } else { rnd_len };
-//            let enc_nxt_pos = if enc_pos + 5 < enc_len { enc_pos + 5 } else { enc_len };
-//            let exp_len = enc_nxt_pos - enc_pos;
-//            println!("rnd_pos: {}; rnd_nxt_pos: {}; enc_pos: {}; enc_nxt_pos: {}; exp_len: {};",rnd_pos, rnd_nxt_pos, enc_pos, enc_nxt_pos,exp_len);
-//            let res = to_base85_chunk(&rnd_bytes[rnd_pos..rnd_nxt_pos], &mut buf[0..exp_len]);    
-//            assert_eq!(res, Ok(exp_len));
-//            enc_output.extend_from_slice(&buf[0..exp_len]);
-//            if exp_len < 5 || rnd_nxt_pos == rnd_len { break }
-//            rnd_pos = rnd_nxt_pos;
-//            enc_pos = enc_nxt_pos;
-//        }
-
-
-    }
 
 //    #[test]
 //    fn ensure_output_char_count_is_one_plus_input_byte_count() {
