@@ -244,6 +244,10 @@ pub fn encode<T: AsRef<[u8]>>(input: T) -> Result<String, EncodeError>  {
 // 3 char  -> 2 byte 
 // 4 char  -> 3 byte 
 // 5 char  -> 4 byte 
+//
+// Decoding combines the input character bytes into a u32 product, then divides the u32 product
+// repeatedly by 256, mapping the remainder (modulo) of each division to an index in the
+// ALPHABET_INDEX array, yeilding the byte value for each division. 
 pub fn from_base85_chunk (input: &[u8], output: &mut [u8]) -> Result<usize, DecodeError> {
     use DecodeError::*;
     // ensoure we have enough input data and output space to succeed
@@ -275,7 +279,11 @@ pub fn from_base85_chunk (input: &[u8], output: &mut [u8]) -> Result<usize, Deco
 // 1 byte -> 2 char
 // 2 byte -> 3 char
 // 3 byte -> 4 char
-// 4 byte -> 5 char
+// 4 byte -> 5 cha
+//
+// Encoding combines the input byte values into a u32 product, then divides the u32 product repeatedly by 85,
+// mapping the remainder (modulo) of each divition an index in the ALPHABET array, yeilding the
+// encoded character for each division.
 pub fn to_base85_chunk (input: &[u8], output: &mut [char]) -> Result<usize,EncodeError> {
     use EncodeError::*;
     // ensoure we have enough input data and output space to succeed
@@ -329,11 +337,11 @@ pub fn calculate_decoding_output_length(char_input_len: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::{ decode, encode, calculate_decoding_output_length, calculate_encoding_output_length, to_base85_chunk, from_base85_chunk };
+    use super::{ decode, encode, calculate_decoding_output_length, calculate_encoding_output_length};
     use rand; 
 
     #[test]
-    fn variable_round_trip () {
+    fn variable_1000_round_trips () {
         for _ in 0..1000 {
             let rnd_size = rand::random::<usize>();
             let rnd_capacity: usize = rnd_size % 1000 + 1;

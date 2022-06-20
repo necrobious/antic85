@@ -1,9 +1,8 @@
 [package]
-name = "rfc1924-alphabet"
+name = "antic85"
 version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "a base85 encoding using the rfc1924 alphabet"
 
 [dependencies]
 
